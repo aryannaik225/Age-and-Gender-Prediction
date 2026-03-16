@@ -8,29 +8,17 @@ import numpy as np
 import mss
 import os
 import urllib.request
-import glob
-import re
 from collections import Counter
 
 # --- CONFIG ---
-def get_latest_model(directory, prefix):
-    search_pattern = os.path.join(directory, f"{prefix}*.pth")
-    models_list = glob.glob(search_pattern)
-    if not models_list: return None
-    def extract_version(filepath):
-        match = re.search(r'_v(\d+)_(\d+)_', filepath)
-        if match: return float(f"{match.group(1)}.{match.group(2)}")
-        return 0.0
-    return max(models_list, key=extract_version)
-
-GENDER_MODEL_FILE = get_latest_model("gender_detection", "swin_v") or 'gender_detection/swin_v2_0_gender.pth'
-# Point directly to the new Ordinal Base if dynamic load fails
-AGE_MODEL_FILE = get_latest_model("age_detection", "swin_v") or 'age_detection/swin_ordinal_age_v2.pth'
+# Hardcoded paths to the centralized models folder
+GENDER_MODEL_FILE = "models/swin_v2_0_gender.pth"
+AGE_MODEL_FILE = "models/swin_ordinal_age_v2.pth"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 VAULT_DIR = "secure_vault_v3_Temporal"
 
-print(f"🧠 Dynamic Load -> Gender: {os.path.basename(GENDER_MODEL_FILE)}")
-print(f"🧠 Dynamic Load -> Age: {os.path.basename(AGE_MODEL_FILE)}")
+print(f"🧠 Static Load -> Gender: {os.path.basename(GENDER_MODEL_FILE)}")
+print(f"🧠 Static Load -> Age: {os.path.basename(AGE_MODEL_FILE)}")
 
 PROTO_URL = "https://raw.githubusercontent.com/opencv/opencv/master/samples/dnn/face_detector/deploy.prototxt"
 MODEL_URL = "https://github.com/opencv/opencv_3rdparty/raw/dnn_samples_face_detector_20170830/res10_300x300_ssd_iter_140000.caffemodel"

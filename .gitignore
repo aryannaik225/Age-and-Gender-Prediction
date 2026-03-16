@@ -1,2 +1,19 @@
-*.jpg
-*.png
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments (so your colleagues don't upload their OS environments)
+venv/
+env/
+.env
+
+# Raw Harvester Data (Blocks the massive uncleaned data folders)
+secure_vault_*/
+archive_age_dataset/
+archive_gender_dataset/
+temp_*
+age_detection/age_face_staging/
+
+# Ignore Kaggle system files
+.ipynb_checkpoints/

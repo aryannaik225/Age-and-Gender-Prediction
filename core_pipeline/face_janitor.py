@@ -3,8 +3,9 @@ import shutil
 from tqdm import tqdm
 
 # --- CONFIG ---
-VAULT_DIR = "secure_vault_v2_9_Premium/Age"
-STAGING_DIR = "age_detection/age_face_staging"
+# Hardcoded paths relative to the root Age-and-Gender-Prediction folder
+VAULT_DIR = "secure_vault_v3_Temporal/Age"
+STAGING_DIR = "age_face_staging"
 AGE_CLASSES = ['0-12', '13-19', '20-35', '36-55', '56+']
 
 print("🧹 Firing up the Face Janitor...")

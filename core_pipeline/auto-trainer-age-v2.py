@@ -12,17 +12,18 @@ import cv2
 from PIL import Image
 
 # --- CONFIG ---
-LIVE_DATA_DIR = "age_detection/age_face_staging"   
-PROCESSED_LIVE_DIR = "age_detection/temp_live_age_processed"
+# Hardcoded paths relative to the root Age-and-Gender-Prediction folder
+LIVE_DATA_DIR = "age_face_staging"   
+PROCESSED_LIVE_DIR = "temp_age_live_processed"
 
-GOLDEN_TEST_DIR = "age_detection/golden_dataset_age"     
-PROCESSED_GOLDEN_DIR = "age_detection/temp_golden_age_processed"
+GOLDEN_TEST_DIR = "golden_datasets/age"     
+PROCESSED_GOLDEN_DIR = "temp_age_golden_processed"
  
-ARCHIVE_DIR = "age_detection/archive_age_dataset"         
+ARCHIVE_DIR = "archive_age_dataset"         
 
 # The Kaggle Brain is now your base!
-CURRENT_MODEL = "age_detection/swin_ordinal_age_v3.pth"  
-NEW_CANDIDATE = "age_detection/swin_v2_1_ordinal_age.pth"       
+CURRENT_MODEL = "models/swin_ordinal_age_v2.pth"  
+NEW_CANDIDATE = "models/swin_v2_1_ordinal_age.pth"       
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 BATCH_SIZE = 4 
@@ -156,7 +157,7 @@ def start_retraining():
     old_acc = evaluate_model(model_blue, golden_loader)
     print(f"📍 Current Golden Score (Kaggle Base): {old_acc:.4f}")
 
-    print(f"🏋️ Fine-tuning on {len(train_dataset)}model Hard Negatives & New Data...")
+    print(f"🏋️ Fine-tuning on {len(train_dataset)} Hard Negatives & New Data...")
     model_green = copy.deepcopy(model_blue)
     
     # ORDINAL FIX: BCEWithLogitsLoss

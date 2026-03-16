@@ -12,18 +12,19 @@ import cv2
 from PIL import Image
 
 # --- CONFIG ---
-LIVE_DATA_DIR = "secure_vault_v2_9_Premium/Gender"        # New V2.0 data vault
-PROCESSED_LIVE_DIR = "gender_detection/temp_live_processed"
+# Hardcoded paths relative to the root Age-and-Gender-Prediction folder
+LIVE_DATA_DIR = "secure_vault_v3_Temporal/Gender"
+PROCESSED_LIVE_DIR = "temp_gender_live_processed"
 
-GOLDEN_TEST_DIR = "gender_detection/golden_dataset_v2_0"     # Your hybrid benchmark
-PROCESSED_GOLDEN_DIR = "gender_detection/temp_golden_processed"
+GOLDEN_TEST_DIR = "golden_datasets/gender"
+PROCESSED_GOLDEN_DIR = "temp_gender_golden_processed"
  
-ARCHIVE_DIR = "gender_detection/archive_dataset"         
-CURRENT_MODEL = "gender_detection/swin_v2_0_gender.pth"  # THE CURRENT V2.0 BRAIN
-NEW_CANDIDATE = "gender_detection/swin_v2_NEW.pth"       
+ARCHIVE_DIR = "archive_gender_dataset"         
+CURRENT_MODEL = "models/swin_v2_0_gender.pth"
+NEW_CANDIDATE = "models/swin_v2_1_gender.pth"       
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-BATCH_SIZE = 4 # Optimized for MX330 GPU
+BATCH_SIZE = 4 # Optimized for GPU
 EPOCHS = 2     
 LEARNING_RATE = 5e-6 # Micro-dosing weights
 

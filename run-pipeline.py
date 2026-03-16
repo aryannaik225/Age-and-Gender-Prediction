@@ -5,9 +5,9 @@ import time
 # --- CONFIG ---
 # List of scripts to execute in exact order
 PIPELINE = [
-    {"file": "age_detection/face_janitor.py", "name": "🧹 Face Janitor (Data Prep)"},
-    {"file": "gender_detection/auto-trainer-gender.py", "name": "🧬 Gender Brain Auto-Trainer"},
-    {"file": "age_detection/auto-trainer-age-v2.py", "name": "⏳ Age Brain Auto-Trainer"}
+    {"file": "core_pipeline/face_janitor.py", "name": "🧹 Face Janitor (Data Prep)"},
+    {"file": "core_pipeline/auto-trainer-gender.py", "name": "🧬 Gender Brain Auto-Trainer"},
+    {"file": "core_pipeline/auto-trainer-age-v2.py", "name": "⏳ Age Brain Auto-Trainer"}
 ]
 
 def run_script(script_info):
