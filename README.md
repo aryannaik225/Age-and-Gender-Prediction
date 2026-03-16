@@ -43,6 +43,12 @@ SDE-Demographics-Pipeline/
 
 <br/>
 
+## Dataset used while training:
+
+[Clean-Dataset-1000](https://www.kaggle.com/datasets/aryannaik225/clean-dataset-1000)
+
+<br/>
+
 ## ⚙️ Universal Setup (Windows / macOS / Linux)
 ### 1. **Clone the Repository (Requires Git LFS)**
 
