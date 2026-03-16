@@ -17,3 +17,8 @@ age_detection/age_face_staging/
 
 # Ignore Kaggle system files
 .ipynb_checkpoints/
+
+# Ignore Others
+*.prototxt
+*.pt
+*.caffemodel
