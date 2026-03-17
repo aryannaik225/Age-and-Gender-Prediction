@@ -15,7 +15,7 @@ An end-to-end Machine Learning pipeline for real-time Age and Gender classificat
 
 ## 📂 Repository Structure
 ```text
-SDE-Demographics-Pipeline/
+/
 ├── README.md                          
 ├── run-pipeline.py                    # The Master CI/CD Orchestrator
 │
