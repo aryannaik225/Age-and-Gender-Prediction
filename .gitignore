@@ -22,3 +22,8 @@ age_detection/age_face_staging/
 *.prototxt
 *.pt
 *.caffemodel
+
+P1E_S1/
+P1L_S1/
+ChokePoint_DataSets/
+footfall_analytics.csv
