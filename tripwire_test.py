@@ -13,12 +13,13 @@ from collections import Counter
 import threading
 import queue
 import json
+import shutil
 
 # --- 1. CONFIG & PATHS ---
 FRAME_FOLDER = "ChokePoint_DataSets/P1E_S1/P1E_S1_C1"
 CSV_FILE = "footfall_analytics.csv"
 POLYGON_SAVE_FILE = "polygon_config.json"
-HARVEST_DIR = "harvested_faces"
+HARVEST_DIR = "harvested_images"
 os.makedirs(HARVEST_DIR, exist_ok=True) 
 
 GENDER_MODEL_FILE = "models/swin_v2_0_gender.pth"
@@ -136,6 +137,25 @@ def background_ai_worker():
                         final_gender = Counter(gender_memory[track_id]).most_common(1)[0][0]
                         final_age = Counter(age_memory[track_id]).most_common(1)[0][0]
                         demographics_cache[track_id] = {'gender': final_gender, 'age': final_age}
+
+                        if len(gender_memory[track_id]) == FRAMES_TO_WAIT:
+                            
+                            gender_dir = os.path.join(HARVEST_DIR, "Gender", final_gender)
+                            age_dir = os.path.join(HARVEST_DIR, "Age", final_age)
+                            os.makedirs(gender_dir, exist_ok=True)
+                            os.makedirs(age_dir, exist_ok=True)
+                            
+                            temp_face = os.path.join(HARVEST_DIR, f"id_{track_id}_face.jpg")
+                            temp_body = os.path.join(HARVEST_DIR, f"id_{track_id}_body.jpg")
+                            
+                            if os.path.exists(temp_body):
+                                shutil.copy(temp_body, os.path.join(gender_dir, f"id_{track_id}_body.jpg"))
+                                shutil.copy(temp_body, os.path.join(age_dir, f"id_{track_id}_body.jpg"))
+                                os.remove(temp_body)
+                                
+                            if os.path.exists(temp_face):
+                                shutil.copy(temp_face, os.path.join(age_dir, f"id_{track_id}_face.jpg"))
+                                os.remove(temp_face)
         
         ai_queue.task_done()
 
