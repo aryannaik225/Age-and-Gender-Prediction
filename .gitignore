@@ -27,3 +27,5 @@ P1E_S1/
 P1L_S1/
 ChokePoint_DataSets/
 footfall_analytics.csv
+harvested_faces/
+polygon_config.json
