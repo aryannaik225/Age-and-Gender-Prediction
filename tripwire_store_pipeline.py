@@ -14,6 +14,7 @@ import threading
 import queue
 import json
 import shutil
+import time
 
 # --- 1. CONFIG & PATHS ---
 VIDEO_PATH = "CCTV_Cameras_retail_store_720p.mp4"
@@ -54,6 +55,136 @@ transform = transforms.Compose([
 gender_classes = ['Female', 'Male']
 age_classes = ['0-12', '13-19', '20-35', '36-55', '56+']
 
+# ============================================================
+# 🆔 RE-ID: Full-Body Embedding Model & State
+# ============================================================
+# We use a lightweight ResNet-50 backbone (pretrained on ImageNet)
+# stripped of its final classifier so it outputs a 2048-d feature
+# vector per person crop. These vectors are L2-normalised and
+# stored per confirmed YOLO track-ID so that when YOLO assigns a
+# *new* ID to someone who already appeared, we can look up the
+# closest stored embedding and hand back the original ID.
+#
+# Tuning knobs:
+#   REID_SIMILARITY_THRESHOLD  – cosine similarity above which we
+#       call two embeddings "the same person". 0.82 is a safe
+#       default; lower = more permissive (more false merges),
+#       higher = stricter (more missed re-IDs).
+#   REID_EMBED_UPDATE_INTERVAL – update the stored embedding every
+#       N frames while YOLO is still tracking the person so the
+#       vector stays fresh as they turn / move.
+#   REID_MAX_GALLERY_SIZE      – cap on how many embeddings we
+#       keep per ID to limit memory growth (a circular buffer).
+
+REID_SIMILARITY_THRESHOLD  = 0.82
+REID_EMBED_UPDATE_INTERVAL = 30   # frames
+REID_MAX_GALLERY_SIZE      = 8    # embeddings per ID
+
+reid_backbone = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
+reid_backbone.fc = nn.Identity()   # drop the 1000-class head → 2048-d output
+reid_backbone.to(DEVICE).eval()
+
+reid_transform = transforms.Compose([
+    transforms.Resize((256, 128)),          # standard Re-ID input size (H×W)
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std=[0.229, 0.224, 0.225]),
+])
+
+# gallery: { canonical_id: [np.ndarray(2048), ...] }
+reid_gallery: dict[int, list[np.ndarray]] = {}
+# maps every YOLO-assigned ID (including "new" ones) → canonical ID
+yolo_to_canonical: dict[int, int] = {}
+reid_lock = threading.Lock()  # gallery & map are read/written from both threads
+
+def _extract_embedding(crop_bgr: np.ndarray) -> np.ndarray | None:
+    """Return L2-normalised 2048-d embedding for a BGR person crop, or None."""
+    if crop_bgr is None or crop_bgr.size == 0:
+        return None
+    h, w = crop_bgr.shape[:2]
+    if h < 32 or w < 16:
+        return None
+    pil = Image.fromarray(cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB))
+    tensor = reid_transform(pil).unsqueeze(0).to(DEVICE)
+    with torch.no_grad():
+        feat = reid_backbone(tensor).squeeze(0).cpu().numpy().astype(np.float32)
+    norm = np.linalg.norm(feat)
+    if norm < 1e-6:
+        return None
+    return feat / norm
+
+def _best_gallery_match(emb: np.ndarray) -> tuple[int | None, float]:
+    """
+    Compare emb against every stored gallery entry.
+    Returns (canonical_id, best_similarity) or (None, 0.0) if gallery empty.
+    The similarity for an ID is the *max* cosine sim across all its stored
+    embeddings (a single good match is enough to re-identify someone).
+    """
+    best_id, best_sim = None, 0.0
+    for cid, emb_list in reid_gallery.items():
+        sims = [float(np.dot(emb, e)) for e in emb_list]
+        top_sim = max(sims)
+        if top_sim > best_sim:
+            best_sim = top_sim
+            best_id = cid
+    return best_id, best_sim
+
+def resolve_track_id(yolo_id: int, crop_bgr: np.ndarray) -> int:
+    """
+    Given a raw YOLO track_id and the person's current crop, return the
+    *canonical* stable ID we should use everywhere else in the pipeline.
+
+    Algorithm:
+      1. If we've seen this YOLO ID before, just return its known canonical ID.
+      2. Extract an embedding from the crop.
+      3. Search the gallery for a close match above threshold → use that ID.
+      4. No match → this YOLO ID *is* the canonical ID; add it to the gallery.
+    """
+    with reid_lock:
+        if yolo_id in yolo_to_canonical:
+            return yolo_to_canonical[yolo_id]
+
+    emb = _extract_embedding(crop_bgr)
+
+    with reid_lock:
+        if emb is not None:
+            matched_id, sim = _best_gallery_match(emb)
+            if matched_id is not None and sim >= REID_SIMILARITY_THRESHOLD:
+                # Re-identified! Bind this new YOLO ID to the existing person.
+                yolo_to_canonical[yolo_id] = matched_id
+                print(f"🔁 RE-ID: YOLO #{yolo_id} → canonical #{matched_id}  "
+                      f"(cosine={sim:.3f})")
+                # Refresh gallery with this fresh crop so future matches stay robust.
+                if len(reid_gallery[matched_id]) >= REID_MAX_GALLERY_SIZE:
+                    reid_gallery[matched_id].pop(0)
+                reid_gallery[matched_id].append(emb)
+                return matched_id
+
+        # Brand-new person → register them under their YOLO ID.
+        yolo_to_canonical[yolo_id] = yolo_id
+        if emb is not None:
+            reid_gallery[yolo_id] = [emb]
+        return yolo_id
+
+def update_gallery_embedding(canonical_id: int, crop_bgr: np.ndarray) -> None:
+    """
+    Called periodically while YOLO is actively tracking the person to keep
+    their gallery entry up-to-date (handles pose/orientation changes).
+    """
+    emb = _extract_embedding(crop_bgr)
+    if emb is None:
+        return
+    with reid_lock:
+        if canonical_id not in reid_gallery:
+            reid_gallery[canonical_id] = []
+        if len(reid_gallery[canonical_id]) >= REID_MAX_GALLERY_SIZE:
+            reid_gallery[canonical_id].pop(0)   # circular buffer
+        reid_gallery[canonical_id].append(emb)
+
+# ============================================================
+# END RE-ID BLOCK
+# ============================================================
+
 # --- 3. STATE MEMORY & CSV UPDATER ---
 last_logged_event = {} 
 people_inside_logged = set() 
@@ -63,6 +194,12 @@ age_memory = {}
 demographics_cache = {} 
 total_footfall = 0
 FRAMES_TO_WAIT = 5
+
+# ⏱️ TRIPWIRE COOLDOWN: minimum real-world seconds that must elapse before the
+# same person can fire another ENTERED/EXITED event.  Prevents spam from people
+# who linger exactly on the boundary and wobble back-and-forth.
+TRIPWIRE_COOLDOWN_SECS = 2.0
+last_event_time: dict[int, float] = {}  # { canonical_id: time.monotonic() of last fired event }
 
 if not os.path.exists(CSV_FILE):
     with open(CSV_FILE, mode='w', newline='') as file:
@@ -319,10 +456,24 @@ while cap.isOpened():
         boxes = results[0].boxes.xyxy.cpu().numpy()
         track_ids = results[0].boxes.id.int().cpu().tolist()
         
-        for box, track_id in zip(boxes, track_ids):
+        for box, yolo_id in zip(boxes, track_ids):
             x1, y1, x2, y2 = map(int, box)
             cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-            
+
+            # =====================================================
+            # 🆔 RE-ID: Resolve raw YOLO ID → stable canonical ID
+            # =====================================================
+            person_crop_reid = frame[max(0, y1):y2, max(0, x1):x2].copy()
+            track_id = resolve_track_id(yolo_id, person_crop_reid)
+
+            # While YOLO is actively tracking, keep gallery fresh every N frames
+            # so the embedding stays current as the person turns / moves around.
+            if frame_idx % REID_EMBED_UPDATE_INTERVAL == 0:
+                update_gallery_embedding(track_id, person_crop_reid)
+            # =====================================================
+            # END RE-ID BLOCK
+            # =====================================================
+
             cache = demographics_cache.get(track_id, {'gender_locked': False, 'age_locked': False})
             if not (cache.get('gender_locked') and cache.get('age_locked')): 
                 if not ai_queue.full():
@@ -375,7 +526,16 @@ while cap.isOpened():
                     
                     event_type = "ENTERED ZONE" if dot_product > 0 else "EXITED ZONE"
                     
-                    if last_logged_event.get(track_id) != event_type:
+                    # ⏱️ TRIPWIRE COOLDOWN GATE
+                    # Only fire if:  (a) the event type actually changed, AND
+                    #                (b) at least TRIPWIRE_COOLDOWN_SECS have passed
+                    # since the last fired event for this person.
+                    # This stops boundary-wobble from spamming ENTER/EXIT pairs.
+                    now = time.monotonic()
+                    elapsed = now - last_event_time.get(track_id, 0.0)
+                    cooldown_clear = elapsed >= TRIPWIRE_COOLDOWN_SECS
+
+                    if last_logged_event.get(track_id) != event_type and cooldown_clear:
                         if event_type == "ENTERED ZONE": total_footfall += 1
                         
                         demo_data = demographics_cache.get(track_id, {'gender': '', 'age': ''})
@@ -386,6 +546,7 @@ while cap.isOpened():
                             writer.writerow([timestamp, track_id, demo_data['gender'], demo_data['age'], event_type])
                         
                         last_logged_event[track_id] = event_type
+                        last_event_time[track_id] = now          # stamp the clock
                         print(f"✅ INSTANT LOG: [{timestamp}] ID:{track_id} | {event_type} | Total: {total_footfall}")
 
             track_history[track_id] = {'in_zone': is_inside_now, 'x': cx, 'y': cy}
