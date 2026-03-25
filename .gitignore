@@ -27,6 +27,9 @@ P1E_S1/
 P1L_S1/
 ChokePoint_DataSets/
 footfall_analytics.csv
+footfall_analytics_store.csv
 harvested_faces/
 harvested_images/
+harvested_images_store/
 polygon_config.json
+polygon_config_store.json
