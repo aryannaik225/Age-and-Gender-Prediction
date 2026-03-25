@@ -55,7 +55,7 @@ gender_classes = ['Female', 'Male']
 age_classes = ['0-12', '13-19', '20-35', '36-55', '56+']
 
 # --- 3. STATE MEMORY & CSV UPDATER ---
-last_logged_event = {} # 🎯 SDE UPGRADE: Replaces counted_ids to track ENTER/EXIT states correctly
+last_logged_event = {} 
 people_inside_logged = set() 
 track_history = {} 
 gender_memory = {}
@@ -69,7 +69,6 @@ if not os.path.exists(CSV_FILE):
         writer = csv.writer(file)
         writer.writerow(["Timestamp", "Track_ID", "Gender", "Age", "Event"])
 
-# Retroactive CSV Updater
 def update_csv_demographics(target_id, new_gender, new_age):
     if not os.path.exists(CSV_FILE): return
     temp_rows = []
@@ -120,7 +119,7 @@ def background_ai_worker():
         track_id, frame_idx, person_crop = task
         
         if track_id not in demographics_cache:
-            demographics_cache[track_id] = {'gender': 'Scanning...', 'age': 'Scanning...', 'gender_locked': False, 'age_locked': False}
+            demographics_cache[track_id] = {'gender': '', 'age': '', 'gender_locked': False, 'age_locked': False}
 
         # 🧬 PATH 1: GENDER CALCULATION
         if not demographics_cache[track_id]['gender_locked']:
@@ -211,7 +210,6 @@ dragging_idx = -1
 DRAG_RADIUS = 15 
 ui_phase = "POLYGON"
 
-# 🎯 SDE FIX: Self-healing JSON Loader
 if os.path.exists(POLYGON_SAVE_FILE):
     try:
         with open(POLYGON_SAVE_FILE, 'r') as f:
@@ -270,7 +268,6 @@ while ui_phase != "DONE":
     elif ui_phase == "ANCHOR":
         cv2.putText(disp, "2. Click DEEP INSIDE the store -> Press ENTER", (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
     
-    # 🎯 SDE FIX: Safely pushing the frame to the window!
     cv2.imshow("Setup Zone", disp)
     key = cv2.waitKey(30) & 0xFF
     
@@ -291,7 +288,6 @@ poly_x, poly_top, poly_w, poly_h = cv2.boundingRect(polygon_array)
 poly_bottom = poly_top + poly_h
 poly_right = poly_x + poly_w
 
-# 🎯 SDE UPGRADE: The Vector Math Anchor
 poly_cx = int(np.mean(polygon_array[:, 0]))
 poly_cy = int(np.mean(polygon_array[:, 1]))
 inward_vec = np.array([store_anchor[0] - poly_cx, store_anchor[1] - poly_cy])
@@ -316,7 +312,6 @@ while cap.isOpened():
     cv2.addWeighted(overlay, 0.2, frame, 0.8, 0, frame)
     cv2.polylines(frame, [polygon_array], isClosed=True, color=(0, 0, 255), thickness=2)
     
-    # Draw Anchor Point
     cv2.circle(frame, store_anchor, 6, (0, 255, 0), -1)
     cv2.putText(frame, f"Store Footfall: {total_footfall}", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 150), 3)
 
@@ -339,40 +334,51 @@ while cap.isOpened():
             
             if track_id in demographics_cache:
                 demo = demographics_cache[track_id]
-                label = f"ID:{track_id} | G:{demo['gender']} | A:{demo['age']}"
+                disp_g = demo['gender'] if demo['gender'] != "" else "..."
+                disp_a = demo['age'] if demo['age'] != "" else "..."
+                label = f"ID:{track_id} | G:{disp_g} | A:{disp_a}"
                 color = (0, 255, 0) if demo['gender_locked'] and demo['age_locked'] else (0, 165, 255)
             else:
                 label = f"ID:{track_id} | Scanning..."
                 color = (0, 165, 255)
+                
             cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
             is_inside_now = cv2.pointPolygonTest(polygon_array, (cx, cy), False) >= 0
 
             # ==========================================
-            # 🎯 SDE UPGRADE: Distance-Based Direction
+            # 🎯 SDE UPGRADE: OMNIDIRECTIONAL TRIPWIRE
             # ==========================================
             if track_id in track_history:
                 was_inside_before = track_history[track_id]['in_zone']
                 prev_cx, prev_cy = track_history[track_id]['x'], track_history[track_id]['y']
                 
-                standard_entry = not was_inside_before and is_inside_now
-                teleported = (prev_cy < poly_top) and (cy > poly_bottom) and (poly_x < cx < poly_right)
-                teleported_up = (prev_cy > poly_bottom) and (cy < poly_top) and (poly_x < cx < poly_right)
+                # RULE 1: Did they step into OR out of the polygon?
+                crossed_boundary = (was_inside_before != is_inside_now)
+                
+                # RULE 2: Did they walk so fast they completely jumped over the polygon?
+                prev_person_vec = np.array([prev_cx - poly_cx, prev_cy - poly_cy])
+                curr_person_vec = np.array([cx - poly_cx, cy - poly_cy])
+                prev_inside_line = np.dot(prev_person_vec, inward_vec) > 0
+                curr_inside_line = np.dot(curr_person_vec, inward_vec) > 0
+                
+                teleported = False
+                if prev_inside_line != curr_inside_line and not is_inside_now and not was_inside_before:
+                    # Double check they passed near the door, not through a solid wall 50ft away
+                    if (poly_x - 50) < cx < (poly_right + 50) and (poly_top - 50) < cy < (poly_bottom + 50):
+                        teleported = True
 
-                if standard_entry or teleported or teleported_up:
-                    
-                    # 🎯 SDE UPGRADE: Vector Dot Product Math
+                # If either tripwire triggers, run the Dot Product math to figure out their direction!
+                if crossed_boundary or teleported:
                     move_vec = np.array([cx - prev_cx, cy - prev_cy])
                     dot_product = np.dot(move_vec, inward_vec)
                     
-                    # Positive = Walking In. Negative = Walking Out.
                     event_type = "ENTERED ZONE" if dot_product > 0 else "EXITED ZONE"
                     
-                    # Log ONLY if this is a new state for them
                     if last_logged_event.get(track_id) != event_type:
                         if event_type == "ENTERED ZONE": total_footfall += 1
                         
-                        demo_data = demographics_cache.get(track_id, {'gender': 'Scanning...', 'age': 'Scanning...'})
+                        demo_data = demographics_cache.get(track_id, {'gender': '', 'age': ''})
                         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         
                         with open(CSV_FILE, mode='a', newline='') as file:
@@ -385,18 +391,25 @@ while cap.isOpened():
             track_history[track_id] = {'in_zone': is_inside_now, 'x': cx, 'y': cy}
 
             # ==========================================
-            # ⚡ WARM STATE LOGGING
+            # ⚡ WARM STATE LOGGING (With Door Mat Safety Lock)
             # ==========================================
             if RECORD_PEOPLE_INSIDE and track_id not in last_logged_event:
-                demo_data = demographics_cache.get(track_id, {'gender': 'Scanning...', 'age': 'Scanning...'})
-                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
-                with open(CSV_FILE, mode='a', newline='') as file:
-                    writer = csv.writer(file)
-                    writer.writerow([timestamp, track_id, demo_data['gender'], demo_data['age'], "ALREADY IN STORE"])
-                
-                last_logged_event[track_id] = "ALREADY IN STORE"
-                print(f"👀 WARM STATE LOG: [{timestamp}] ID:{track_id} | ALREADY IN STORE")
+                # Do NOT log them as "Warm State" if they are currently standing on the tripwire!
+                if not is_inside_now:
+                    person_vec = np.array([cx - poly_cx, cy - poly_cy])
+                    is_physically_inside = np.dot(person_vec, inward_vec) > 0
+                    
+                    if is_physically_inside:
+                        demo_data = demographics_cache.get(track_id, {'gender': '', 'age': ''})
+                        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        with open(CSV_FILE, mode='a', newline='') as file:
+                            writer = csv.writer(file)
+                            writer.writerow([timestamp, track_id, demo_data['gender'], demo_data['age'], "ALREADY IN STORE"])
+                        
+                        last_logged_event[track_id] = "ALREADY IN STORE"
+                        print(f"👀 WARM STATE LOG: [{timestamp}] ID:{track_id} | ALREADY IN STORE")
 
     cv2.imshow("Unified Polygon Pipeline", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'): break
