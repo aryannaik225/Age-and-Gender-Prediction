@@ -33,3 +33,4 @@ harvested_images/
 harvested_images_store/
 polygon_config.json
 polygon_config_store.json
+chroma_reid_db/
