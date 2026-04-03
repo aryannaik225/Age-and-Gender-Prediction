@@ -18,6 +18,8 @@ An end-to-end Machine Learning pipeline for real-time Age and Gender classificat
 /
 ├── README.md                          
 ├── run-pipeline.py                    # The Master CI/CD Orchestrator
+├── tripwire_store_pipeline.py         # The Tripwire-based Counter for Store Entry and Exit
+├── tripwire_test.py                   # Initial tripwire testing
 │
 ├── inference/                         # Live Trackers & UI
 │   ├── live-interface-hybrid-v3.py    # Screen-grab inference
